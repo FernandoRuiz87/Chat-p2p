@@ -9,111 +9,177 @@ from tkinter import messagebox, filedialog
 import random
 import os
 
-
 class ChatApp:
     def __init__(self):
-        # Obtener el nombre del host
+        
+        #Variables de conexion
         hostname = socket.gethostname()
-
-        self.host = socket.gethostbyname(hostname)  # Host local
-        self.port = random.randint(5000, 9999)  # Puerto del usuario
+        self.host = socket.gethostbyname(hostname)  # Dirección IP
+        self.port = random.randint(5000, 9999)  # Puerto generado aleatoriamente
+        self.server_socket = None  # Socket del servidor de registro
+        
+        #Variables de almacenamiento
+        self.connections = []  # Conexiones con otros peers
+        self.peers = []  # Lista de peers conectados
+        self.peer_info = None  # Información de peer
         self.name = None  # Nombre del usuario
-        self.peers = []  # Lista de peers
-        self.connections = []  # Conexiones con los peers
-        self.server_socket = None  # Socket para conexión con el servidor
-        self.login = None
-        self.peer_info = None
+        
+        #Variable de front
+        self.login = None  # Ventana de login
 
-        if self.conectar_servidor():  # Verficar conexion con servidor de registro
-            self.login_gui()  # Cargar gui
+        # Si se puede conectar al servidor de registro, mostrar la ventana de login
+        if self.conectar_servidor():
+            self.login_gui()
 
-    def conectar_servidor(self):
+    """Backend"""
+        
+    def conectar_servidor(self): #Funcion para contectarse al servidor
+        """Intenta conectarse al servidor de registro."""
         try:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.server_socket.connect((env.HOST, env.PORT))
+            self.server_socket.connect((env.HOST, env.PORT))  # Conecta al servidor
             return True
         except Exception as e:
             messagebox.showerror(
                 "Error", f"Error al conectarse con el servidor: {str(e)}"
             )
             return False
-
-    def enviar_notificacion_usuario(self, command):
-        if command == "LOGIN":
-            """Envía una notificación a todos los peers de que un nuevo usuario se ha unido."""
-            mensaje = f"{self.host}#{self.name}#{self.port} se ha unido al chat."
-            for conn in self.connections:
-                try:
-                    conn.send(mensaje.encode("utf-8"))
-                except socket.error as e:
-                    if e.errno == errno.WSAENOTSOCK:  # Código de error 10054
-                        conn.close()
-                except Exception as e:
-                    conn.close()
-            self.agregar_mensaje("Te has unido al chat", "new_user")
-        else:
-            """Envía una notificación a todos los peers de que un usuario se desconecto."""
-            mensaje = f"{self.name}#{self.port} ha salido del chat."
-            for conn in self.connections:
-                try:
-                    conn.send(mensaje.encode("utf-8"))
-                except Exception as e:
-                    conn.close()
-
-    def registrar_nodo(self, username_entry):
-        self.name = username_entry.get()  # obtener el texto del textbox
-
+    
+    def iniciar_nodo_servidor(self):
+        """Inicia el nodo como servidor para aceptar conexiones de peers."""
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind((self.host, self.port)) #Acepta conexiones en su ip y puerto
+        server.listen() #Se mantiene escuchando
+        while True:
+            conn, addr = server.accept() #Acepta cualquier conexion
+            self.connections.append(conn) #Agrega a la lista de conexiones la informacion del peer conectado
+            threading.Thread(target=self.manejador_peer, args=(conn, addr)).start() #Inicia un nuevo hilo para manejar un cliente
+    
+    def registrar_nodo(self, username_entry): #Registra el nodo en el servidor 
+        """Registra el usuario en el servidor y actualiza la lista de peers."""
+        self.name = username_entry.get()  # Obtener el nombre de usuario
         if not self.name:
             return messagebox.showerror(
-                "Error", "El nombre de usuario no puede quedar vacio"
+                "Error", "El nombre de usuario no puede quedar vacío"
             )
 
         try:
-            self.server_socket.send(
-                f"[REGISTER],{self.host},{self.port},{self.name}".encode("utf-8")
-            )
-            data = self.server_socket.recv(1024).decode("utf-8")
-            self.peers = eval(data)  # Actualizar lista de peers
-
-            messagebox.showinfo(
-                "¡Bienvenido!",
-                "Tu registro ha sido exitoso. ¡Nos alegra tenerte con nosotros!",
-            )
-            self.login.withdraw()
-            self.chat_gui()
-
+            #Enviar los datos de registro al servidor
+            self.server_socket.send(f"[REGISTER],{self.host},{self.port},{self.name}".encode("utf-8")) 
+            data = self.server_socket.recv(1024).decode("utf-8")  # Recibir lista de peers
+            self.peers = eval(data)  # Convertir la lista de peers a formato Python
+            messagebox.showinfo("¡Bienvenido!", "Tu registro ha sido exitoso.") #Mensaje de retroalimentacion
+            self.login.withdraw()  # Cerrar ventana de login
+            self.chat_gui()  # Abrir ventana de chat
         except Exception as e:
             messagebox.showerror("Error", "Error al enviar datos al servidor")
             return False
+    
+    def enviar_notificacion_usuario(self, command):
+        """Notifica a los peers cuando un usuario se une o se desconecta."""
+        if command == "LOGIN":
+            mensaje = f"{self.host}#{self.name}#{self.port} se ha unido al chat."
+            for conn in self.connections: 
+                try:
+                    conn.send(mensaje.encode("utf-8")) #Envia a todos los peers conectados el mensaje
+                except socket.error as e:
+                    if e.errno == errno.WSAENOTSOCK:  # Error de socket
+                        conn.close()
+                except Exception as e:
+                    conn.close()
+            self.agregar_mensaje("Te has unido al chat", "new_user") #Mensaje de retroalimentacion para si mismo
+        else:
+            mensaje = f"{self.name}#{self.port} ha salido del chat." #Mensaje de desconexion
+            for conn in self.connections:
+                try:
+                    conn.send(mensaje.encode("utf-8"))
+                except Exception as e:
+                    conn.close()
 
     def conectar_a_peers(self):
+        """Conectar con los peers registrados."""
         for peer in self.peers:
-            if self.port != peer[1]:  # Evitar conectarse a sí mismo
+            if self.port != peer[1]:  # Evitar conectarse a si mismo
                 try:
                     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     client.connect((peer[0], peer[1]))  # Conectar con el peer
-                    self.connections.append(client)
-                    threading.Thread(
-                        target=self.manejador_peer, args=(client, (peer[0], peer[1]))
-                    ).start()
+                    self.connections.append(client)  # Añadir a la lista de conexiones
+                    # Iniciar un hilo para manejar la comunicación con el peer
+                    threading.Thread(target=self.manejador_peer, args=(client, (peer[0], peer[1]))).start()
                 except Exception as e:
                     client.close()
-        self.enviar_notificacion_usuario(command="LOGIN")
+        self.enviar_notificacion_usuario(command="LOGIN")  # Notificar a los peers
 
-    def actualizar_lista_peers(self):
-        """Actualiza el Listbox con los peers actuales."""
+    def hilo_de_mensajes(self):
+        """Inicia un nuevo hilo para enviar un mensaje."""
+        mensaje = self.caja_mensaje.get("1.0", "end-1c")
+        if mensaje:
+            threading.Thread(target=self.enviar_mensaje).start()
+    
+    def manejador_peer(self, conn, addr): #Manejador de peer para todas las operaciones a realizar
+        """Maneja la comunicación con un peer."""
+        while True:
+            try:
+                message = conn.recv(1024) #Recibir imagen o mensaje
+                if not message:
+                    break
+                message_str = message.decode("utf-8")
+                if message_str.startswith("IMG:"):  # Si es una imagen
+                    _, filename, filesize = message_str.split(":")
+                    filesize = int(filesize)
+                    with open(f"received_{filename}", "wb") as img_file:
+                        bytes_received = 0
+                        while bytes_received < filesize:
+                            img_data = conn.recv(1024)
+                            img_file.write(img_data)
+                            bytes_received += len(img_data)
+                    self.agregar_mensaje(
+                        f"{addr}: Enviaron una imagen: {filename}", "peer"
+                    )
+                elif "ha salido del chat" in message_str:  # Manejo de desconexión de un peer
+                    parts = message_str.split("#")
+                    port = "".join(filter(str.isdigit, parts[1]))
+                    port = int(port)
+                    self.peers = [peer for peer in self.peers if peer[1] != port] #Remueve de la lista visualmente
+                    self.eliminar_conexion(port) #Remueve de la lista logicamente
+                    self.actualizar_lista_peers() #Actualiza la vista de los peers conectados
+                    self.agregar_mensaje(f"{message_str}", "leave") #Manda mensaje a todos 
+                else:
+                    ip, usuario, port = message_str.split("#")
+                    port = int(port[:4])  # Corregir el puerto
+                    self.peer_info = (ip, port, usuario) 
+                    if self.peer_info not in self.peers: #Agrega un nuevo peer a la lista visual si no esta 
+                        self.peers.append(self.peer_info)
+                        self.actualizar_lista_peers() #Actualiza la vista de los peers conectados
+                    partes = message_str.split("#", 1)
+                    message_str = partes[1] if len(partes) > 1 else message_str #Formatea el mensaje
+                    self.agregar_mensaje(f"{message_str}", "peer") #Envia mensaje a todos
+            except Exception as e:
+                pass
+        conn.close()
+
+    def eliminar_conexion(self, puerto):
+        """Elimina una conexión con un peer desconectado."""
+        for client in self.connections:
+            try:
+                _, client_port = client.getpeername()  # Obtener puerto del peer
+                if client_port == puerto:
+                    client.close() #Cierra la conexion con ese cliente
+                    self.connections.remove(client) #Se remueve de la lista de conexiones
+                    break
+            except Exception: 
+                pass #Omitimos para no generar errores de mandar mensaje a un peer que no esta
+    
+    def actualizar_lista_peers(self): #Actualiza la lista de peers conectados en el front
+        """Actualiza la lista gráfica de peers en el chat."""
         self.peers_listbox.delete(0, tk.END)  # Limpia la lista actual
         for peer in self.peers:
             self.peers_listbox.insert(
                 tk.END, f"● {peer[2]}#{peer[1]}"
-            )  # Muestra el peer
-
-    def hilo_de_mensajes(self):
-        mensaje = self.caja_mensaje.get("1.0", "end-1c")
-        if mensaje:
-            threading.Thread(target=self.enviar_mensaje).start()
+            )  # Insertar nuevo peer
 
     def enviar_mensaje(self):
+        """Envía un mensaje a todos los peers conectados."""
         mensaje = self.caja_mensaje.get("1.0", "end-1c")
         self.agregar_mensaje(f"Tú: {mensaje}", "self")
         for conn in self.connections:
@@ -122,13 +188,14 @@ class ChatApp:
                     f"{self.host}#{self.name}#{self.port}: {mensaje}".encode("utf-8")
                 )
             except socket.error as e:
-                if e.errno == errno.WSAENOTSOCK:  # Código de error 10054
+                if e.errno == errno.WSAENOTSOCK:  # Error de socket
                     conn.close()
             except Exception as e:
                 messagebox.showerror("Error", f"Error al enviar el mensaje {e}")
-
+        self.caja_mensaje.delete("1.0", tk.END)
+    
     def enviar_imagen(self):
-        # Abrir un cuadro de diálogo para seleccionar una imagen
+        """Selecciona y envía una imagen a los peers."""
         file_path = filedialog.askopenfilename(
             title="Seleccionar Imagen",
             filetypes=[("Imagenes", "*.png;*.jpg;*.jpeg;*.gif")],
@@ -142,116 +209,48 @@ class ChatApp:
 
         for conn in self.connections:
             try:
-                # Enviar la longitud del nombre del archivo
                 filename = os.path.basename(file_path)
                 conn.send(
                     f"IMG:{filename}:{os.path.getsize(file_path)}".encode("utf-8")
                 )
-
-                # Enviar la imagen en chunks
                 with open(file_path, "rb") as img_file:
-                    img_data = img_file.read(1024)  # Leer en bloques de 1024 bytes
+                    img_data = img_file.read(1024)
                     while img_data:
                         conn.send(img_data)
                         img_data = img_file.read(1024)
             except Exception as e:
                 messagebox.showerror("Error", f"Error al enviar la imagen: {e}")
 
-    def manejador_peer(self, conn, addr):
-        while True:
-            try:
-
-                # Recibir el mensaje
-                message = conn.recv(1024)
-                if not message:
-                    break
-
-                # Verificar si es una imagen
-                message_str = message.decode("utf-8")
-                if message_str.startswith("IMG:"):
-                    # Si es un mensaje de imagen
-                    _, filename, filesize = message_str.split(":")
-                    filesize = int(filesize)
-
-                    # Recibir la imagen
-                    with open(f"received_{filename}", "wb") as img_file:
-                        bytes_received = 0
-                        while bytes_received < filesize:
-                            img_data = conn.recv(1024)
-                            img_file.write(img_data)
-                            bytes_received += len(img_data)
-
-                    self.agregar_mensaje(
-                        f"{addr}: Enviaron una imagen: {filename}", "peer"
-                    )
-                elif (
-                    "salido" in message_str
-                ):  # Manejar desconexiones en la lista de peers para no enviar mensajes
-                    # Peer se ha desconectado
-                    self.agregar_mensaje(f"{message_str}", "leave")
-
-                    # Dividir la cadena por el delimitador '#'
-                    parts = message_str.split("#")
-
-                    # Extraer la parte que contiene números
-                    port = "".join(filter(str.isdigit, parts[1]))
-                    port = int(port)  # Convertir el puerto a int para poder trabajar
-
-                    # Filtrar la lista de peers para eliminar el peer con el puerto especificado
-                    self.peers = [peer for peer in self.peers if peer[1] != port]
-
-                    self.eliminar_conexion(port)  # Eliminar de la lista de conexiones
-                    self.actualizar_lista_peers()
-                else:
-                    ip, usuario, port = message_str.split("#")
-                    port = port[:4]
-                    port = int(port)
-
-                    self.peer_info = (ip, port, usuario)
-
-                    # Verificar si el peer ya está en la lista
-                    if self.peer_info not in self.peers:
-                        self.peers.append(self.peer_info)
-                        self.actualizar_lista_peers()
-
-                    # Dividir la cadena por el primer '#'
-                    partes = message_str.split("#", 1)
-                    # Tomar la parte después del primer '#'
-                    message_str = partes[1] if len(partes) > 1 else message_str
-                    self.agregar_mensaje(f"{message_str}", "peer")
-
-            except Exception as e:
-                pass
-        conn.close()
-
-    def eliminar_conexion(self, puerto):
-        for client in self.connections:
-            try:
-                # Obtenemos el puerto de la conexión
-                _, client_port = client.getpeername()  # Devuelve (IP, puerto)
-                if client_port == puerto:
-                    client.close()  # Cerramos la conexión
-                    self.connections.remove(client)  # Eliminamos de la lista
-                    break  # Salimos del bucle después de encontrar y eliminar la conexión
-            except Exception as e:
-                pass
-
-    def iniciar_nodo_servidor(self):
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.bind((self.host, self.port))
-        server.listen()
-        while True:
-            conn, addr = server.accept()
-            self.connections.append(conn)  # Guardar la nueva conexión
-            threading.Thread(target=self.manejador_peer, args=(conn, addr)).start()
-
+    
+    """Front"""
+    
+    def agregar_mensaje(self, mensaje, tag):
+        self.chat_text.config(state=tk.NORMAL)
+        self.chat_text.insert(tk.END, mensaje + "\n", tag)
+        self.chat_text.config(state=tk.DISABLED)
+        self.chat_text.yview(tk.END)
+    
     def login_gui(self):
+        def evento_enviar_usuario(event= None):
+            self.registrar_nodo(username_entry=self.username)
+            return "break"  # Evita que el evento Enter añada una nueva línea
+            
         self.login = tk.Tk()
-        self.login.geometry("325x350")
         self.login.title("Chat")
         self.login.configure(bg="#1E1E1E")
         self.login.resizable(False, False)
 
+        # Obtener el tamaño de la pantalla
+        ancho_pantalla = self.login.winfo_screenwidth()
+        alto_pantalla = self.login.winfo_screenheight()
+        
+        # Calcular la posición para centrar la ventana
+        pos_x = int((ancho_pantalla / 2) - (325 / 2))
+        pos_y = int((alto_pantalla / 2) - (350 / 2))
+        
+        # Establecer la geometría de la ventana (tamaño y posición)
+        self.login.geometry(f"{325}x{350}+{pos_x}+{pos_y}")
+        
         icono = tk.PhotoImage(file="images/logo.png")
         self.login.iconphoto(True, icono)
 
@@ -285,6 +284,7 @@ class ChatApp:
 
         username = CTkEntry(master=self.login, height=24, width=275, corner_radius=5)
         username.grid(row=2, column=0, sticky="we", padx=25, pady=(0, 0))
+        username.bind("<Return>",evento_enviar_usuario)
 
         btn = CTkButton(
             text="Ingresar",
@@ -299,12 +299,6 @@ class ChatApp:
 
         self.login.mainloop()
 
-    def agregar_mensaje(self, mensaje, tag):
-        self.chat_text.config(state=tk.NORMAL)
-        self.chat_text.insert(tk.END, mensaje + "\n", tag)
-        self.chat_text.config(state=tk.DISABLED)
-        self.chat_text.yview(tk.END)
-
     def chat_gui(self):
         app = tk.Toplevel()
 
@@ -314,7 +308,10 @@ class ChatApp:
                 self.login.destroy()
                 app.destroy()
                 sys.exit(0)
-
+        def evento_enviar_mensaje(event): #Evento para utilizar el enter
+            self.enviar_mensaje()
+            return "break"  # Evita que el evento Enter añada una nueva línea
+        
         app.geometry("1000x700")
         app.title("CHAT")
         app.configure(bg="#1E1E1E")
@@ -395,6 +392,7 @@ class ChatApp:
             wrap=tk.WORD,
         )
         self.caja_mensaje.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        self.caja_mensaje.bind("<Return>", evento_enviar_mensaje)
 
         btn_send = CTkButton(
             master=mensaje_frame,
