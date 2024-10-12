@@ -31,10 +31,9 @@ def handle_client(conn, addr):
             data = conn.recv(1024).decode("utf-8")
             if not data:  # Si no hay datos, el cliente se ha desconectado
                 print(
-                    f"{RED}DESCONEXION: {YELLOW}{addr}{RESET} - {RED}HORA DE DESCONEXION: {YELLOW}{hora_conexion}{RESET}"
+                    f"{RED}[DESCONEXION] {YELLOW}{ip}:{port}{RESET} ~~~ {RED}[HORA_DESCONEXION] {YELLOW}{hora_conexion}{RESET}"
                 )
                 break
-
             if "[REGISTER]" in data:
                 _, ip, port, name = data.split(",")
                 peer_info = (ip, int(port), name)
@@ -43,7 +42,7 @@ def handle_client(conn, addr):
                 if peer_info not in peers:
                     peers.append(peer_info)
                     print(
-                        f"{GREEN}CONEXIÓN: {YELLOW}{addr}{RESET} - {GREEN}HORA DE CONEXIÓN: {YELLOW}{hora_conexion}{RESET}"
+                        f"{GREEN}[CONEXIÓN] {YELLOW}{ip}:{port}{RESET} ~~~ {GREEN}[HORA_CONEXIÓN] {YELLOW}{hora_conexion}{RESET}"
                     )
 
                 # Enviar la lista actualizada de peers al nodo
@@ -52,12 +51,12 @@ def handle_client(conn, addr):
         if e.errno == errno.WSAECONNRESET:  # Código de error 10054
             pass
     except Exception as e:
-        print(f"{PURPLE}Error manejando el cliente {addr}: {e}{RESET}")
+        print(f"{PURPLE}Error manejando el cliente {ip}: {e}{RESET}")
     finally:
         if peer_info and peer_info in peers:
             peers.remove(peer_info)  # Elimina el peer de la lista
             print(
-                f"{RED}DESCONEXION: {YELLOW}{addr}{RESET} - {RED}HORA DE DESCONEXION: {YELLOW}{hora_conexion}{RESET}"
+                f"{RED}[DESCONEXION] {YELLOW}{ip}:{port}{RESET} ~~~ {RED}[HORA_DESCONEXION] {YELLOW}{hora_conexion}{RESET}"
             )
             # print(f"{BLUE}Lista de peers actualizada: {peers}{RESET}")
         conn.close()  # Asegúrate de cerrar la conexión al final

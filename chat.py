@@ -12,7 +12,10 @@ import os
 
 class ChatApp:
     def __init__(self):
-        self.host = "localhost"  # Host local
+        # Obtener el nombre del host
+        hostname = socket.gethostname()
+
+        self.host = socket.gethostbyname(hostname)  # Host local
         self.port = random.randint(5000, 9999)  # Puerto del usuario
         self.name = None  # Nombre del usuario
         self.peers = []  # Lista de peers
@@ -209,13 +212,13 @@ class ChatApp:
                     # Verificar si el peer ya está en la lista
                     if self.peer_info not in self.peers:
                         self.peers.append(self.peer_info)
-                        self.agregar_mensaje(f"{message_str}", "peer")
                         self.actualizar_lista_peers()
 
                     # Dividir la cadena por el primer '#'
                     partes = message_str.split("#", 1)
                     # Tomar la parte después del primer '#'
                     message_str = partes[1] if len(partes) > 1 else message_str
+                    self.agregar_mensaje(f"{message_str}", "peer")
 
             except Exception as e:
                 pass
