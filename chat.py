@@ -4,8 +4,9 @@ from tkinter import scrolledtext
 import env
 import tkinter as tk
 from customtkinter import *
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 import random
+import os
 
 
 class ChatApp:
@@ -21,9 +22,6 @@ class ChatApp:
         if self.conectar_servidor():  # Verficar conexion con servidor de registro
             self.login_gui()  # Cargar gui
 
-    """1"""
-
-    # Método para conectar al servidor de registro
     def conectar_servidor(self):
         try:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -35,9 +33,16 @@ class ChatApp:
             )
             return False
 
-    """2"""
+    def enviar_notificacion_nuevo_usuario(self):
+        """Envía una notificación a todos los peers de que un nuevo usuario se ha unido."""
+        mensaje = f"{self.name}#{self.port} se ha unido al chat."
+        for conn in self.connections:
+            try:
+                conn.send(mensaje.encode("utf-8"))
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al enviar la notificación: {e}")
+        self.agregar_mensaje("Te has unido al chat", "peer")
 
-    # Registrar el nodo en el server
     def registrar_nodo(self, username_entry):
         self.name = username_entry.get()  # obtener el texto del textbox
 
@@ -48,30 +53,22 @@ class ChatApp:
 
         try:
             self.server_socket.send(
-                f"{self.host},{self.port},{self.name}".encode("utf-8")
-            )  # Enviar info del nodo
-
-            data = self.server_socket.recv(1024).decode(
-                "utf-8"
-            )  # Recibir lista de peers
+                f"[REGISTER],{self.host},{self.port},{self.name}".encode("utf-8")
+            )
+            data = self.server_socket.recv(1024).decode("utf-8")
             self.peers = eval(data)  # Actualizar lista de peers
-            """AUN PUEDE CAMBIAR A CERRAR LA CONEXION"""
 
             messagebox.showinfo(
                 "¡Bienvenido!",
                 "Tu registro ha sido exitoso. ¡Nos alegra tenerte con nosotros!",
             )
-            """Cargar GUI del chat"""
             self.login.withdraw()
             self.chat_gui()
 
         except Exception as e:
-            messagebox.showerror("Error", "Eror al enviar datos al servidor")
+            messagebox.showerror("Error", "Error al enviar datos al servidor")
             return False
 
-    """3"""
-
-    # Método para conectar a otros peers
     def conectar_a_peers(self):
         for peer in self.peers:
             if self.port != peer[1]:  # Evitar conectarse a sí mismo
@@ -79,6 +76,8 @@ class ChatApp:
                     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     client.connect((peer[0], peer[1]))  # Conectar con el peer
                     self.connections.append(client)
+                    # Enviar notificación a todos los peers de que un nuevo usuario se ha unido
+
                     threading.Thread(
                         target=self.manejador_peer, args=(client, (peer[0], peer[1]))
                     ).start()
@@ -86,73 +85,114 @@ class ChatApp:
                     messagebox.showerror(
                         "Error", f"Error al conectar con el peer {peer}: {e}"
                     )
+        self.enviar_notificacion_nuevo_usuario()
 
-    # Hilo para enviar mensajes
     def hilo_de_mensajes(self):
         mensaje = self.caja_mensaje.get("1.0", "end-1c")
-        # Verificar que el mensaje no esta vacio e iniciar el hilo
         if mensaje:
             threading.Thread(target=self.enviar_mensaje).start()
 
-    # Enviar mensajes a todos los peers conectados
     def enviar_mensaje(self):
         mensaje = self.caja_mensaje.get("1.0", "end-1c")
         self.agregar_mensaje(f"Tú: {mensaje}", "self")
-        # Enviar el mensaje a todos los peers conectados
         for conn in self.connections:
             try:
                 conn.send(f"{self.name}: {mensaje}".encode("utf-8"))
             except Exception as e:
                 messagebox.showerror("Error", f"Error al enviar el mensaje {e}")
 
-    # Manejar los mensajes entrantes de un peer
+    def enviar_imagen(self):
+        # Abrir un cuadro de diálogo para seleccionar una imagen
+        file_path = filedialog.askopenfilename(
+            title="Seleccionar Imagen",
+            filetypes=[("Imagenes", "*.png;*.jpg;*.jpeg;*.gif")],
+        )
+        if not file_path:
+            return
+
+        self.agregar_mensaje(
+            f"Tú enviaste una imagen: {os.path.basename(file_path)}", "self"
+        )
+
+        for conn in self.connections:
+            try:
+                # Enviar la longitud del nombre del archivo
+                filename = os.path.basename(file_path)
+                conn.send(
+                    f"IMG:{filename}:{os.path.getsize(file_path)}".encode("utf-8")
+                )
+
+                # Enviar la imagen en chunks
+                with open(file_path, "rb") as img_file:
+                    img_data = img_file.read(1024)  # Leer en bloques de 1024 bytes
+                    while img_data:
+                        conn.send(img_data)
+                        img_data = img_file.read(1024)
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al enviar la imagen: {e}")
+
     def manejador_peer(self, conn, addr):
         while True:
             try:
+                # Recibir el mensaje
                 message = conn.recv(1024)
                 if not message:
                     break
-                self.agregar_mensaje(f"{addr}: {message}", "peer")
+
+                # Verificar si es una imagen
+                message_str = message.decode("utf-8")
+                if message_str.startswith("IMG:"):
+                    # Si es un mensaje de imagen
+                    _, filename, filesize = message_str.split(":")
+                    filesize = int(filesize)
+
+                    # Recibir la imagen
+                    with open(f"received_{filename}", "wb") as img_file:
+                        bytes_received = 0
+                        while bytes_received < filesize:
+                            img_data = conn.recv(1024)
+                            img_file.write(img_data)
+                            bytes_received += len(img_data)
+
+                    self.agregar_mensaje(
+                        f"{addr}: Enviaron una imagen: {filename}", "peer"
+                    )
+                else:
+                    # Aquí es donde manejamos el mensaje normal (incluyendo la notificación)
+                    self.agregar_mensaje(f"{message_str}", "peer")
             except:
                 break
         conn.close()
 
-    # Iniciar el servidor para aceptar conexiones entrantes
     def iniciar_nodo_servidor(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind((self.host, self.port))
         server.listen()
-        """print(f"Escuchando conexiones entrantes en {self.host}:{self.port}")"""
         while True:
             conn, addr = server.accept()
             self.connections.append(conn)  # Guardar la nueva conexión
             threading.Thread(target=self.manejador_peer, args=(conn, addr)).start()
 
     def login_gui(self):
-        # Configurar la ventana principal
         self.login = tk.Tk()
         self.login.geometry("325x350")
         self.login.title("Chat")
         self.login.configure(bg="#1E1E1E")
         self.login.resizable(False, False)
 
-        # Icono del programa
         icono = tk.PhotoImage(file="images/logo.png")
         self.login.iconphoto(True, icono)
 
-        # Configuración de filas y columnas
         self.login.columnconfigure(0, weight=1)
         self.login.rowconfigure(0, weight=15)
         self.login.rowconfigure(1, weight=15)
         self.login.rowconfigure(2, weight=8)
         self.login.rowconfigure(3, weight=5)
 
-        # Parte del logo
         image = tk.PhotoImage(file="images/logo.png", master=self.login)
         image_label = tk.Label(self.login, image=image, bg="#1E1E1E")
         image_label.grid(row=0, column=0)
 
-        # Nombre de la self.login
         canvas = tk.Canvas(self.login, bg="#1E1E1E", height=20, highlightthickness=0)
         canvas.grid(row=1, column=0, sticky="nsew")
         canvas.create_line(25, 0, 300, 0, fill="#FFFFFF", width=1)
@@ -161,7 +201,6 @@ class ChatApp:
         )
         canvas.create_line(25, 52, 300, 52, fill="#FFFFFF", width=1)
 
-        # Etiqueta y entrada de texto
         label = tk.Label(
             self.login,
             text="Ingrese su nombre de usuario",
@@ -175,7 +214,6 @@ class ChatApp:
         username = CTkEntry(master=self.login, height=24, width=275, corner_radius=5)
         username.grid(row=2, column=0, sticky="we", padx=25, pady=(0, 0))
 
-        # Botón para ingresar
         btn = CTkButton(
             text="Ingresar",
             width=275,
@@ -187,61 +225,17 @@ class ChatApp:
         )
         btn.grid(row=3, column=0, columnspan=2, sticky="we", padx=25, pady=(0, 30))
 
-        # Ejecutar la aplicación
         self.login.mainloop()
 
     def agregar_mensaje(self, mensaje, tag):
-        # Crear frame temporal para el mensaje
-        bubble_frame = tk.Frame(self.chat_canvas, bg="#434343", pady=5)
-
-        # Configurar colores y alineación para cada tipo de mensaje
-        if tag == "peer":
-            color_fondo = "#00FF00"  # Verde para peers
-            justificacion = "w"  # Alineado a la izquierda
-            anchor_pos = "nw"
-        else:
-            color_fondo = "#00BFFF"  # Azul para tus mensajes
-            justificacion = "e"  # Alineado a la derecha
-            anchor_pos = "ne"
-
-        # Crear la "burbuja" del mensaje
-        mensaje_label = tk.Label(
-            bubble_frame,
-            text=mensaje,
-            bg=color_fondo,
-            fg="white",
-            font=("Segoe UI", 12),
-            wraplength=500,  # Ajusta este valor según el tamaño de la burbuja
-            padx=10,
-            pady=5,
-        )
-
-        # Posicionar la burbuja en la ventana de chat
-        mensaje_label.pack(
-            side=tk.LEFT if tag == "peer" else tk.RIGHT, anchor=justificacion, padx=10
-        )
-
-        # Crear la ventana en el canvas con la burbuja alineada
-        self.chat_canvas.create_window(
-            (
-                5 if tag == "peer" else self.chat_canvas.winfo_width() - 5
-            ),  # Alinear a izquierda o derecha
-            self.y_position,
-            anchor=anchor_pos,
-            window=bubble_frame,
-        )
-
-        # Ajustar la posición vertical para el próximo mensaje
-        self.y_position += bubble_frame.winfo_reqheight() + 10
-
-        # Desplazar el scroll hacia el final
-        self.chat_canvas.update_idletasks()
-        self.chat_canvas.yview_moveto(1.0)
+        self.chat_text.config(state=tk.NORMAL)
+        self.chat_text.insert(tk.END, mensaje + "\n", tag)
+        self.chat_text.config(state=tk.DISABLED)
+        self.chat_text.yview(tk.END)
 
     def chat_gui(self):
-        app = tk.Toplevel()  # Cambiar de Toplevel a Tk para crear la ventana principal
+        app = tk.Toplevel()
 
-        # Evento al cerrar la ventana
         def on_closing():
             if messagebox.askokcancel("Salir", "¿Seguro que quieres salir?"):
                 app.destroy()
@@ -250,18 +244,19 @@ class ChatApp:
         app.geometry("1000x700")
         app.title("CHAT")
         app.configure(bg="#1E1E1E")
-        app.minsize(800, 600)
+
+        icono = tk.PhotoImage(file="images/logo.png")
+        app.iconphoto(True, icono)
 
         main_frame = tk.Frame(app)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Barra lateral de contactos
         barra_contactos = tk.Frame(main_frame, bg="#1E1E1E", width=200)
         barra_contactos.pack(side=tk.LEFT, fill=tk.Y)
 
         lbl_nombreUsuario = tk.Label(
             barra_contactos,
-            text=self.name,
+            text="Usuario: " + self.name,
             font=("Segoe UI", 20),
             justify="left",
             foreground="white",
@@ -269,35 +264,57 @@ class ChatApp:
         )
         lbl_nombreUsuario.pack(fill=tk.X, padx=50, pady=5)
 
-        # --- Sección del chat ---
+        lbl_peersConectados = tk.Label(
+            barra_contactos,
+            text="Usuarios conectados",
+            font=("Segoe UI", 16),
+            justify="right",
+            foreground="white",
+            background="#1E1E1E",
+        )
+        lbl_peersConectados.pack(fill=tk.X, padx=10, pady=5)
+
+        self.peers_listbox = tk.Listbox(
+            barra_contactos,
+            bg="#1E1E1E",
+            fg="white",
+            font=("Segoe UI", 12),
+            selectbackground="#434343",
+        )
+        self.peers_listbox.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        for peer in self.peers:
+            self.peers_listbox.insert(tk.END, f"●{peer[2]}#{peer[1]})")
+
         right_frame = tk.Frame(main_frame, bg="#737373")
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        # Canvas para los mensajes
-        self.chat_canvas = tk.Canvas(right_frame, bg="#434343")
-        self.chat_canvas.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        barra_superior = tk.Frame(right_frame, bg="#434343", height=60)
+        barra_superior.pack(fill=tk.X)
 
-        # Scrollbar para el Canvas
-        scrollbar = tk.Scrollbar(right_frame, command=self.chat_canvas.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.chat_canvas.config(yscrollcommand=scrollbar.set)
+        self.chat_text = scrolledtext.ScrolledText(
+            right_frame,
+            wrap=tk.WORD,
+            state=tk.DISABLED,
+            bg="#434343",
+            font=("Segoe UI", 12),
+            foreground="#FFFFFF",
+        )
+        self.chat_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Frame interior para contener los mensajes
-        self.chat_frame = tk.Frame(self.chat_canvas, bg="#434343")
-        self.chat_canvas.create_window((0, 0), window=self.chat_frame, anchor="nw")
-
-        # Atributo para mantener la posición vertical
-        self.y_position = 0
-
-        # --- Sección de envío de mensajes ---
         mensaje_frame = tk.Frame(right_frame, bg="#434343", height=40)
         mensaje_frame.pack(fill=tk.X, padx=5, pady=10)
 
-        # Caja de entrada de mensajes
+        mensaje_frame.columnconfigure(0, weight=1)
+        mensaje_frame.columnconfigure(1, weight=0)
+        mensaje_frame.columnconfigure(2, weight=0)
+
+        self.chat_text.tag_configure("peer", foreground="#00FF00")
+        self.chat_text.tag_configure("self", foreground="#00BFFF", justify="right")
+
         self.caja_mensaje = tk.Text(
             mensaje_frame,
             height=1,
-            width=60,
             bg="#434343",
             font=("Segoe UI", 15),
             foreground="#FFFFFF",
@@ -305,8 +322,7 @@ class ChatApp:
         )
         self.caja_mensaje.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
 
-        # Botón de enviar mensaje
-        btn = CTkButton(
+        btn_send = CTkButton(
             master=mensaje_frame,
             text="Enviar",
             width=100,
@@ -316,18 +332,26 @@ class ChatApp:
             hover_color="#86E8B5",
             command=self.hilo_de_mensajes,
         )
-        btn.grid(row=0, column=1, padx=5, pady=5, sticky="e")
+        btn_send.grid(row=0, column=1, padx=5, pady=5, sticky="e")
 
-        # Verificar si se va a cerrar la ventana
+        # Botón para enviar imágenes
+        btn_send_image = CTkButton(
+            master=mensaje_frame,
+            text="Enviar Imagen",
+            width=100,
+            corner_radius=10,
+            fg_color="#29BCF6",
+            text_color="#FFFFFF",
+            hover_color="#86E8B5",
+            command=self.enviar_imagen,
+        )
+        btn_send_image.grid(row=0, column=2, padx=5, pady=5, sticky="e")
+
         app.protocol("WM_DELETE_WINDOW", on_closing)
 
-        # Cargar backend
         self.conectar_a_peers()
-
-        # Hilo para iniciar el nodo como servidor
         threading.Thread(target=self.iniciar_nodo_servidor).start()
 
-        # Ejecutar la aplicación
         app.mainloop()
 
 
