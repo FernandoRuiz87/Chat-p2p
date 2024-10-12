@@ -19,6 +19,7 @@ class ChatApp:
         self.connections = []  # Conexiones con los peers
         self.server_socket = None  # Socket para conexión con el servidor
         self.login = None
+        self.peer_info = None
 
         if self.conectar_servidor():  # Verficar conexion con servidor de registro
             self.login_gui()  # Cargar gui
@@ -37,7 +38,7 @@ class ChatApp:
     def enviar_notificacion_usuario(self, command):
         if command == "LOGIN":
             """Envía una notificación a todos los peers de que un nuevo usuario se ha unido."""
-            mensaje = f"{self.name}#{self.port} se ha unido al chat."
+            mensaje = f"{self.host}#{self.name}#{self.port} se ha unido al chat."
             for conn in self.connections:
                 try:
                     conn.send(mensaje.encode("utf-8"))
@@ -88,7 +89,6 @@ class ChatApp:
                 try:
                     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     client.connect((peer[0], peer[1]))  # Conectar con el peer
-                    print(f"Conexion a {client}")
                     self.connections.append(client)
                     threading.Thread(
                         target=self.manejador_peer, args=(client, (peer[0], peer[1]))
@@ -115,7 +115,9 @@ class ChatApp:
         self.agregar_mensaje(f"Tú: {mensaje}", "self")
         for conn in self.connections:
             try:
-                conn.send(f"{self.name}#{self.port}: {mensaje}".encode("utf-8"))
+                conn.send(
+                    f"{self.host}#{self.name}#{self.port}: {mensaje}".encode("utf-8")
+                )
             except socket.error as e:
                 if e.errno == errno.WSAENOTSOCK:  # Código de error 10054
                     conn.close()
@@ -155,6 +157,7 @@ class ChatApp:
     def manejador_peer(self, conn, addr):
         while True:
             try:
+
                 # Recibir el mensaje
                 message = conn.recv(1024)
                 if not message:
@@ -191,25 +194,34 @@ class ChatApp:
                     port = "".join(filter(str.isdigit, parts[1]))
                     port = int(port)  # Convertir el puerto a int para poder trabajar
 
+                    # Filtrar la lista de peers para eliminar el peer con el puerto especificado
+                    self.peers = [peer for peer in self.peers if peer[1] != port]
+
                     self.eliminar_conexion(port)  # Eliminar de la lista de conexiones
-                    self.eliminar_peer()
-                    # Eliminar de los peers
-                    print(self.peers)
-                    print(port)
-                    print("Lista de peers despues de la eliminación:", self.peers)
                     self.actualizar_lista_peers()
                 else:
-                    self.agregar_mensaje(f"{message_str}", "peer")
-                    self.actualizar_lista_peers()
-            except:
-                break
+                    ip, usuario, port = message_str.split("#")
+                    port = port[:4]
+                    port = int(port)
+
+                    self.peer_info = (ip, port, usuario)
+
+                    # Verificar si el peer ya está en la lista
+                    if self.peer_info not in self.peers:
+                        self.peers.append(self.peer_info)
+                        self.agregar_mensaje(f"{message_str}", "peer")
+                        self.actualizar_lista_peers()
+
+                    # Dividir la cadena por el primer '#'
+                    partes = message_str.split("#", 1)
+                    # Tomar la parte después del primer '#'
+                    message_str = partes[1] if len(partes) > 1 else message_str
+
+            except Exception as e:
+                pass
         conn.close()
 
-    def eliminar_peer(peer, port):
-        pass
-
     def eliminar_conexion(self, puerto):
-        print("si entra")
         for client in self.connections:
             try:
                 # Obtenemos el puerto de la conexión
@@ -296,8 +308,9 @@ class ChatApp:
         def on_closing():
             if messagebox.askokcancel("Salir", "¿Seguro que quieres salir?"):
                 self.enviar_notificacion_usuario(command="LOGOUT")
+                self.login.destroy()
                 app.destroy()
-                self.login.deiconify()
+                sys.exit(0)
 
         app.geometry("1000x700")
         app.title("CHAT")
