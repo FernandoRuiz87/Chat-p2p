@@ -1,0 +1,3 @@
+HOST = "localhost"
+PORT = 8000
+LISTENER_LIMIT = 5
