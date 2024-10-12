@@ -33,15 +33,28 @@ class ChatApp:
             )
             return False
 
-    def enviar_notificacion_nuevo_usuario(self):
-        """Envía una notificación a todos los peers de que un nuevo usuario se ha unido."""
-        mensaje = f"{self.name}#{self.port} se ha unido al chat."
-        for conn in self.connections:
-            try:
-                conn.send(mensaje.encode("utf-8"))
-            except Exception as e:
-                messagebox.showerror("Error", f"Error al enviar la notificación: {e}")
-        self.agregar_mensaje("Te has unido al chat", "peer")
+    def enviar_notificacion_usuario(self, command):
+        if command == "LOGIN":
+            """Envía una notificación a todos los peers de que un nuevo usuario se ha unido."""
+            mensaje = f"{self.name}#{self.port} se ha unido al chat."
+            for conn in self.connections:
+                try:
+                    conn.send(mensaje.encode("utf-8"))
+                except Exception as e:
+                    messagebox.showerror(
+                        "Error", f"Error al enviar la notificación: {e}"
+                    )
+            self.agregar_mensaje("Te has unido al chat", "new_user")
+        else:
+            """Envía una notificación a todos los peers de que un usuario se desconecto."""
+            mensaje = f"{self.name}#{self.port} ha salido del chat."
+            for conn in self.connections:
+                try:
+                    conn.send(mensaje.encode("utf-8"))
+                except Exception as e:
+                    messagebox.showerror(
+                        "Error", f"Error al enviar la notificación: {e}"
+                    )
 
     def registrar_nodo(self, username_entry):
         self.name = username_entry.get()  # obtener el texto del textbox
@@ -76,7 +89,6 @@ class ChatApp:
                     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     client.connect((peer[0], peer[1]))  # Conectar con el peer
                     self.connections.append(client)
-                    # Enviar notificación a todos los peers de que un nuevo usuario se ha unido
 
                     threading.Thread(
                         target=self.manejador_peer, args=(client, (peer[0], peer[1]))
@@ -85,7 +97,7 @@ class ChatApp:
                     messagebox.showerror(
                         "Error", f"Error al conectar con el peer {peer}: {e}"
                     )
-        self.enviar_notificacion_nuevo_usuario()
+        self.enviar_notificacion_usuario(command="LOGIN")
 
     def hilo_de_mensajes(self):
         mensaje = self.caja_mensaje.get("1.0", "end-1c")
@@ -157,6 +169,8 @@ class ChatApp:
                     self.agregar_mensaje(
                         f"{addr}: Enviaron una imagen: {filename}", "peer"
                     )
+                elif "salido" in message_str:
+                    self.agregar_mensaje(f"{message_str}", "leave")
                 else:
                     # Aquí es donde manejamos el mensaje normal (incluyendo la notificación)
                     self.agregar_mensaje(f"{message_str}", "peer")
@@ -238,6 +252,7 @@ class ChatApp:
 
         def on_closing():
             if messagebox.askokcancel("Salir", "¿Seguro que quieres salir?"):
+                self.enviar_notificacion_usuario(command="LOGOUT")
                 app.destroy()
                 self.login.deiconify()
 
@@ -311,6 +326,8 @@ class ChatApp:
 
         self.chat_text.tag_configure("peer", foreground="#00FF00")
         self.chat_text.tag_configure("self", foreground="#00BFFF", justify="right")
+        self.chat_text.tag_configure("new_user", foreground="#f1c40f")
+        self.chat_text.tag_configure("leave", foreground="#e74c3c")
 
         self.caja_mensaje = tk.Text(
             mensaje_frame,
