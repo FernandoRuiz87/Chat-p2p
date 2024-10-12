@@ -1,3 +1,4 @@
+import errno
 import socket
 import threading
 from tkinter import scrolledtext
@@ -40,10 +41,11 @@ class ChatApp:
             for conn in self.connections:
                 try:
                     conn.send(mensaje.encode("utf-8"))
+                except socket.error as e:
+                    if e.errno == errno.WSAENOTSOCK:  # Código de error 10054
+                        conn.close()
                 except Exception as e:
-                    messagebox.showerror(
-                        "Error", f"Error al enviar la notificación: {e}"
-                    )
+                    conn.close()
             self.agregar_mensaje("Te has unido al chat", "new_user")
         else:
             """Envía una notificación a todos los peers de que un usuario se desconecto."""
@@ -52,9 +54,7 @@ class ChatApp:
                 try:
                     conn.send(mensaje.encode("utf-8"))
                 except Exception as e:
-                    messagebox.showerror(
-                        "Error", f"Error al enviar la notificación: {e}"
-                    )
+                    conn.close()
 
     def registrar_nodo(self, username_entry):
         self.name = username_entry.get()  # obtener el texto del textbox
@@ -88,16 +88,22 @@ class ChatApp:
                 try:
                     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     client.connect((peer[0], peer[1]))  # Conectar con el peer
+                    print(f"Conexion a {client}")
                     self.connections.append(client)
-
                     threading.Thread(
                         target=self.manejador_peer, args=(client, (peer[0], peer[1]))
                     ).start()
                 except Exception as e:
-                    messagebox.showerror(
-                        "Error", f"Error al conectar con el peer {peer}: {e}"
-                    )
+                    client.close()
         self.enviar_notificacion_usuario(command="LOGIN")
+
+    def actualizar_lista_peers(self):
+        """Actualiza el Listbox con los peers actuales."""
+        self.peers_listbox.delete(0, tk.END)  # Limpia la lista actual
+        for peer in self.peers:
+            self.peers_listbox.insert(
+                tk.END, f"● {peer[2]}#{peer[1]}"
+            )  # Muestra el peer
 
     def hilo_de_mensajes(self):
         mensaje = self.caja_mensaje.get("1.0", "end-1c")
@@ -109,7 +115,10 @@ class ChatApp:
         self.agregar_mensaje(f"Tú: {mensaje}", "self")
         for conn in self.connections:
             try:
-                conn.send(f"{self.name}: {mensaje}".encode("utf-8"))
+                conn.send(f"{self.name}#{self.port}: {mensaje}".encode("utf-8"))
+            except socket.error as e:
+                if e.errno == errno.WSAENOTSOCK:  # Código de error 10054
+                    conn.close()
             except Exception as e:
                 messagebox.showerror("Error", f"Error al enviar el mensaje {e}")
 
@@ -169,14 +178,48 @@ class ChatApp:
                     self.agregar_mensaje(
                         f"{addr}: Enviaron una imagen: {filename}", "peer"
                     )
-                elif "salido" in message_str:
+                elif (
+                    "salido" in message_str
+                ):  # Manejar desconexiones en la lista de peers para no enviar mensajes
+                    # Peer se ha desconectado
                     self.agregar_mensaje(f"{message_str}", "leave")
+
+                    # Dividir la cadena por el delimitador '#'
+                    parts = message_str.split("#")
+
+                    # Extraer la parte que contiene números
+                    port = "".join(filter(str.isdigit, parts[1]))
+                    port = int(port)  # Convertir el puerto a int para poder trabajar
+
+                    self.eliminar_conexion(port)  # Eliminar de la lista de conexiones
+                    self.eliminar_peer()
+                    # Eliminar de los peers
+                    print(self.peers)
+                    print(port)
+                    print("Lista de peers despues de la eliminación:", self.peers)
+                    self.actualizar_lista_peers()
                 else:
-                    # Aquí es donde manejamos el mensaje normal (incluyendo la notificación)
                     self.agregar_mensaje(f"{message_str}", "peer")
+                    self.actualizar_lista_peers()
             except:
                 break
         conn.close()
+
+    def eliminar_peer(peer, port):
+        pass
+
+    def eliminar_conexion(self, puerto):
+        print("si entra")
+        for client in self.connections:
+            try:
+                # Obtenemos el puerto de la conexión
+                _, client_port = client.getpeername()  # Devuelve (IP, puerto)
+                if client_port == puerto:
+                    client.close()  # Cerramos la conexión
+                    self.connections.remove(client)  # Eliminamos de la lista
+                    break  # Salimos del bucle después de encontrar y eliminar la conexión
+            except Exception as e:
+                pass
 
     def iniciar_nodo_servidor(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -297,9 +340,7 @@ class ChatApp:
             selectbackground="#434343",
         )
         self.peers_listbox.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        for peer in self.peers:
-            self.peers_listbox.insert(tk.END, f"●{peer[2]}#{peer[1]})")
+        self.actualizar_lista_peers()
 
         right_frame = tk.Frame(main_frame, bg="#737373")
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -374,3 +415,4 @@ class ChatApp:
 
 if __name__ == "__main__":
     ChatApp()
+    exit(0)
