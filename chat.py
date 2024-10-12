@@ -1,12 +1,13 @@
-import errno
-import socket
-import threading
-from tkinter import scrolledtext
-import env
-import tkinter as tk
-from customtkinter import *
 from tkinter import messagebox, filedialog
+from tkinter import Image, scrolledtext
+from PIL import Image, ImageTk
+from customtkinter import *
+import tkinter as tk
+import threading
 import random
+import socket
+import errno
+import env
 import os
 
 class ChatApp:
@@ -72,7 +73,7 @@ class ChatApp:
             self.login.withdraw()  # Cerrar ventana de login
             self.chat_gui()  # Abrir ventana de chat
         except Exception as e:
-            messagebox.showerror("Error", "Error al enviar datos al servidor")
+            messagebox.showerror("Error", f"Error al enviar datos al servidor {e}")
             return False
     
     def enviar_notificacion_usuario(self, command):
@@ -127,15 +128,23 @@ class ChatApp:
                 if message_str.startswith("IMG:"):  # Si es una imagen
                     _, filename, filesize = message_str.split(":")
                     filesize = int(filesize)
+
+                    # Guardar la imagen
                     with open(f"received_{filename}", "wb") as img_file:
                         bytes_received = 0
                         while bytes_received < filesize:
                             img_data = conn.recv(1024)
                             img_file.write(img_data)
                             bytes_received += len(img_data)
-                    self.agregar_mensaje(
-                        f"{addr}: Enviaron una imagen: {filename}", "peer"
-                    )
+
+                    # Construir la ruta completa del archivo
+                    filepath = f"received_{filename}"
+
+                    # Agregar un mensaje indicando que se recibió una imagen
+                    self.agregar_mensaje(f"{addr}: Envió una imagen: ◙", "peer")
+
+                    # Mostrar la imagen usando el filepath
+                    self.mostrar_imagen(filepath,"recibida")
                 elif "ha salido del chat" in message_str:  # Manejo de desconexión de un peer
                     parts = message_str.split("#")
                     port = "".join(filter(str.isdigit, parts[1]))
@@ -175,7 +184,7 @@ class ChatApp:
         self.peers_listbox.delete(0, tk.END)  # Limpia la lista actual
         for peer in self.peers:
             self.peers_listbox.insert(
-                tk.END, f"● {peer[2]}#{peer[1]}"
+                tk.END, f"  ▲ {peer[2]}#{peer[1]}"
             )  # Insertar nuevo peer
 
     def enviar_mensaje(self):
@@ -204,7 +213,7 @@ class ChatApp:
             return
 
         self.agregar_mensaje(
-            f"Tú enviaste una imagen: {os.path.basename(file_path)}", "self"
+            f"Tú enviaste una imagen: ◙", "self"
         )
 
         for conn in self.connections:
@@ -220,8 +229,34 @@ class ChatApp:
                         img_data = img_file.read(1024)
             except Exception as e:
                 messagebox.showerror("Error", f"Error al enviar la imagen: {e}")
+            # Función para mostrar la imagen en una nueva ventana
+        self.mostrar_imagen(file_path,"enviada")
+        
+    def mostrar_imagen(self, ruta, command):
+        # Crear una nueva ventana
+        ventana_imagen = tk.Toplevel()
+        ventana_imagen.title(f"Imagen-{command}")
 
-    
+        # Abrir la imagen usando PIL
+        imagen = Image.open(ruta)
+        imagen_tk = ImageTk.PhotoImage(imagen)
+
+        # Crear un label para mostrar la imagen
+        label_imagen = tk.Label(ventana_imagen, image=imagen_tk)
+        label_imagen.image = imagen_tk  # Necesario para evitar que la imagen se recolecte como basura
+        label_imagen.pack()
+
+        # Ajustar el tamaño de la ventana al tamaño de la imagen
+        ventana_imagen.geometry(f"{imagen.width}x{imagen.height}")  # Establecer tamaño inicial
+
+        # Establecer el tamaño mínimo de la ventana
+        ventana_imagen.minsize(200, 200)
+
+        # Ajustar el tamaño de la ventana después de que la imagen se haya cargado
+        ventana_imagen.update_idletasks()  # Asegúrate de que se actualicen los cambios en la ventana
+        ventana_imagen.geometry(f"{max(200, imagen.width)}x{max(200, imagen.height)}")  # Asegurarse de que sea al menos 200x200
+
+
     """Front"""
     
     def agregar_mensaje(self, mensaje, tag):
@@ -309,13 +344,28 @@ class ChatApp:
                 app.destroy()
                 sys.exit(0)
         def evento_enviar_mensaje(event): #Evento para utilizar el enter
-            self.enviar_mensaje()
+            mensaje = self.caja_mensaje.get("1.0", "end-1c")
+            if mensaje:
+                self.enviar_mensaje()
             return "break"  # Evita que el evento Enter añada una nueva línea
         
-        app.geometry("1000x700")
-        app.title("CHAT")
+        # Crear la ventana del chat
+        app.title(f"CHAT - {self.name.upper()}#{self.port}")
         app.configure(bg="#1E1E1E")
 
+        # Obtener el tamaño de la pantalla
+        ancho_pantalla = app.winfo_screenwidth()
+        alto_pantalla = app.winfo_screenheight()  # Asegúrate de usar 'app' en lugar de 'self.chat_gui'
+
+        # Calcular la posición para centrar la ventana
+        pos_x = int((ancho_pantalla / 2) - (1000 / 2))
+        pos_y = int((alto_pantalla / 2) - (700 / 2))
+
+        # Establecer la geometría de la ventana (tamaño y posición)
+        app.geometry(f"1000x700+{pos_x}+{pos_y}")
+        
+        app.minsize(800,650)
+                
         icono = tk.PhotoImage(file="images/logo.png")
         app.iconphoto(True, icono)
 
@@ -327,34 +377,40 @@ class ChatApp:
 
         lbl_nombreUsuario = tk.Label(
             barra_contactos,
-            text="Usuario: " + self.name,
+            text=f"!Hola {self.name}!",
             font=("Segoe UI", 20),
             justify="left",
-            foreground="white",
+            foreground="#7d3c98",
             background="#1E1E1E",
         )
         lbl_nombreUsuario.pack(fill=tk.X, padx=50, pady=5)
 
         lbl_peersConectados = tk.Label(
             barra_contactos,
-            text="Usuarios conectados",
+            text="● Usuarios conectados",
             font=("Segoe UI", 16),
-            justify="right",
-            foreground="white",
+            justify="left",
+            foreground="#2ecc71",
             background="#1E1E1E",
+            
         )
-        lbl_peersConectados.pack(fill=tk.X, padx=10, pady=5)
+        lbl_peersConectados.pack(fill=tk.X, padx=0, pady=5)
 
         self.peers_listbox = tk.Listbox(
             barra_contactos,
             bg="#1E1E1E",
-            fg="white",
+            fg="#82e0aa",
             font=("Segoe UI", 12),
             selectbackground="#434343",
+            bd=0,
         )
         self.peers_listbox.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.actualizar_lista_peers()
-
+        
+        # Cambiar el color del borde resaltado
+        self.peers_listbox.configure(highlightbackground="#737373", highlightcolor="#82e0aa")  # Cambia a tus colores deseados
+        self.actualizar_lista_peers()
+        
         right_frame = tk.Frame(main_frame, bg="#737373")
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
@@ -397,7 +453,7 @@ class ChatApp:
         btn_send = CTkButton(
             master=mensaje_frame,
             text="Enviar",
-            width=100,
+            width=80,
             corner_radius=10,
             fg_color="#29BCF6",
             text_color="#FFFFFF",
@@ -410,7 +466,7 @@ class ChatApp:
         btn_send_image = CTkButton(
             master=mensaje_frame,
             text="Enviar Imagen",
-            width=100,
+            width=150,
             corner_radius=10,
             fg_color="#29BCF6",
             text_color="#FFFFFF",
@@ -429,4 +485,3 @@ class ChatApp:
 
 if __name__ == "__main__":
     ChatApp()
-    exit(0)
