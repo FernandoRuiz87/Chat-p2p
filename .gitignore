@@ -1,1 +1,16 @@
 __pycache__
+
+# Ignore all .png files
+*.png
+
+# Ignore all .jpg files
+*.jpg
+
+# Ignore all image files (including other types like .gif, .jpeg, etc.)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.svg
