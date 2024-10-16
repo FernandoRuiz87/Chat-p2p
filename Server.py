@@ -1,3 +1,4 @@
+from cryptography.fernet import Fernet
 import threading
 import datetime
 import socket
@@ -22,18 +23,28 @@ now = datetime.datetime.now()
 # Formatear la fecha y hora en un formato legible
 hora_conexion = now.strftime("%Y-%m-%d %H:%M:%S")
 
+cipher_suite = Fernet(env.KEY)
+
+def encrypt_data(data):
+    return cipher_suite.encrypt(data.encode("utf-8")) #Encriptar
+
+def decrypt_data(encrypted_data):
+    return cipher_suite.decrypt(encrypted_data).decode("utf-8") #Desencriptar
 
 def handle_client(conn, addr):
     """Maneja la conexión con un cliente (nodo)"""
     try:
         peer_info = None  # Inicializa peer_info fuera del bucle
         while True:
-            data = conn.recv(1024).decode("utf-8")
-            if not data:  # Si no hay datos, el cliente se ha desconectado
+            encrypted_data = conn.recv(1024)
+            if not encrypt_data:  # Si no hay datos, el cliente se ha desconectado
                 print(
                     f"{RED}[DESCONEXION] {YELLOW}{ip}:{port}{RESET} ~~~ {RED}[HORA_DESCONEXION] {YELLOW}{hora_conexion}{RESET}"
                 )
                 break
+            # Desencriptar datos
+            data = decrypt_data(encrypted_data)
+            
             if "[REGISTER]" in data:
                 _, ip, port, name = data.split(",")
                 peer_info = (ip, int(port), name)
@@ -45,8 +56,10 @@ def handle_client(conn, addr):
                         f"{GREEN}[CONEXIÓN] {YELLOW}{ip}:{port}{RESET} ~~~ {GREEN}[HORA_CONEXIÓN] {YELLOW}{hora_conexion}{RESET}"
                     )
 
-                # Enviar la lista actualizada de peers al nodo
-                conn.send(str(peers).encode("utf-8"))
+                 # Enviar la lista actualizada de peers al nodo, cifrada
+                encrypted_peers = encrypt_data(str(peers))
+                conn.send(encrypted_peers)
+                
     except socket.error as e:
         if e.errno == errno.WSAECONNRESET:  # Código de error 10054
             pass

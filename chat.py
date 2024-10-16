@@ -1,5 +1,6 @@
 from tkinter import messagebox, filedialog
 from tkinter import Image, scrolledtext
+from cryptography.fernet import Fernet
 from PIL import Image, ImageTk
 from customtkinter import *
 import tkinter as tk
@@ -25,6 +26,9 @@ class ChatApp:
         self.peer_info = None  # Información de peer
         self.name = None  # Nombre del usuario
         
+        #Encriptacion
+        self.cipher_suite = Fernet(env.KEY)
+        
         #Variable de front
         self.login = None  # Ventana de login
 
@@ -33,7 +37,15 @@ class ChatApp:
             self.login_gui()
 
     """Backend"""
-        
+
+    def encrypt_data(self,data):
+    # Encriptar los datos
+        return self.cipher_suite.encrypt(data.encode())
+    
+    def decrypt_data(self,encrypted_data):
+    # Desencriptar los datos
+        return self.cipher_suite.decrypt(encrypted_data).decode()
+    
     def conectar_servidor(self): #Funcion para contectarse al servidor
         """Intenta conectarse al servidor de registro."""
         try:
@@ -66,11 +78,25 @@ class ChatApp:
 
         try:
             #Enviar los datos de registro al servidor
-            self.server_socket.send(f"[REGISTER],{self.host},{self.port},{self.name}".encode("utf-8")) 
-            data = self.server_socket.recv(1024).decode("utf-8")  # Recibir lista de peers
+            #Crear mensaje y encriptarlo
+            register_message = f"[REGISTER],{self.host},{self.port},{self.name}"
+            encrypted_message = self.encrypt_data(register_message)
+            
+            #Enviar mensaje encriptado
+            self.server_socket.send(encrypted_message)
+            
+            # Recibir lista de peers (encriptada)
+            encrypted_data = self.server_socket.recv(1024)  
+            
+            # Desencriptar la respuesta
+            data = self.decrypt_data(encrypted_data)  
+            
             self.peers = eval(data)  # Convertir la lista de peers a formato Python
+            
             messagebox.showinfo("¡Bienvenido!", "Tu registro ha sido exitoso.") #Mensaje de retroalimentacion
+            
             self.login.withdraw()  # Cerrar ventana de login
+            
             self.chat_gui()  # Abrir ventana de chat
         except Exception as e:
             messagebox.showerror("Error", f"Error al enviar datos al servidor {e}")
@@ -79,10 +105,13 @@ class ChatApp:
     def enviar_notificacion_usuario(self, command):
         """Notifica a los peers cuando un usuario se une o se desconecta."""
         if command == "LOGIN":
-            mensaje = f"{self.host}#{self.name}#{self.port} se ha unido al chat."
+            #Encripta el mensaje de notificacion
+            notification_message = f"{self.host}#{self.name}#{self.port} se ha unido al chat."
+            encrypted_message = self.encrypt_data(notification_message)
+            
             for conn in self.connections: 
                 try:
-                    conn.send(mensaje.encode("utf-8")) #Envia a todos los peers conectados el mensaje
+                    conn.send(encrypted_message) #Envia a todos los peers conectados el mensaje
                 except socket.error as e:
                     if e.errno == errno.WSAENOTSOCK:  # Error de socket
                         conn.close()
@@ -90,10 +119,11 @@ class ChatApp:
                     conn.close()
             self.agregar_mensaje("Te has unido al chat", "new_user") #Mensaje de retroalimentacion para si mismo
         else:
-            mensaje = f"{self.name}#{self.port} ha salido del chat." #Mensaje de desconexion
+            desconection_message = f"{self.name}#{self.port} ha salido del chat." #Mensaje de desconexion
+            encrypted_message = self.encrypt_data(desconection_message) #encriptar mensaje
             for conn in self.connections:
                 try:
-                    conn.send(mensaje.encode("utf-8"))
+                    conn.send(encrypted_message) #enviar a todos
                 except Exception as e:
                     conn.close()
 
@@ -121,12 +151,15 @@ class ChatApp:
         """Maneja la comunicación con un peer."""
         while True:
             try:
-                message = conn.recv(1024) #Recibir imagen o mensaje
-                if not message:
+                encrypted_message = conn.recv(1024) #Recibir imagen o mensaje encriptado
+                
+                if not encrypted_message:
                     break
-                message_str = message.decode("utf-8")
-                if message_str.startswith("IMG:"):  # Si es una imagen
-                    _, filename, filesize = message_str.split(":")
+                
+                message = self.decrypt_data(encrypted_message) #Desencriptar el mensaje
+                
+                if message.startswith("IMG:"):  # Si es una imagen
+                    _, filename, filesize = message.split(":")
                     filesize = int(filesize)
 
                     # Guardar la imagen
@@ -136,7 +169,8 @@ class ChatApp:
                             img_data = conn.recv(1024)
                             img_file.write(img_data)
                             bytes_received += len(img_data)
-
+                    
+                    
                     # Construir la ruta completa del archivo
                     filepath = f"received_{filename}"
 
@@ -145,24 +179,25 @@ class ChatApp:
 
                     # Mostrar la imagen usando el filepath
                     self.mostrar_imagen(filepath,"recibida")
-                elif "ha salido del chat" in message_str:  # Manejo de desconexión de un peer
-                    parts = message_str.split("#")
+
+                elif "ha salido del chat" in message:  # Manejo de desconexión de un peer
+                    parts = message.split("#")
                     port = "".join(filter(str.isdigit, parts[1]))
                     port = int(port)
                     self.peers = [peer for peer in self.peers if peer[1] != port] #Remueve de la lista visualmente
                     self.eliminar_conexion(port) #Remueve de la lista logicamente
                     self.actualizar_lista_peers() #Actualiza la vista de los peers conectados
-                    self.agregar_mensaje(f"{message_str}", "leave") #Manda mensaje a todos 
+                    self.agregar_mensaje(f"{message}", "leave") #Manda mensaje a todos 
                 else:
-                    ip, usuario, port = message_str.split("#")
+                    ip, usuario, port = message.split("#")
                     port = int(port[:4])  # Corregir el puerto
                     self.peer_info = (ip, port, usuario) 
                     if self.peer_info not in self.peers: #Agrega un nuevo peer a la lista visual si no esta 
                         self.peers.append(self.peer_info)
                         self.actualizar_lista_peers() #Actualiza la vista de los peers conectados
-                    partes = message_str.split("#", 1)
-                    message_str = partes[1] if len(partes) > 1 else message_str #Formatea el mensaje
-                    self.agregar_mensaje(f"{message_str}", "peer") #Envia mensaje a todos
+                    partes = message.split("#", 1)
+                    message = partes[1] if len(partes) > 1 else message #Formatea el mensaje
+                    self.agregar_mensaje(f"{message}", "peer") #Envia mensaje a todos
             except Exception as e:
                 pass
         conn.close()
@@ -189,13 +224,15 @@ class ChatApp:
 
     def enviar_mensaje(self):
         """Envía un mensaje a todos los peers conectados."""
-        mensaje = self.caja_mensaje.get("1.0", "end-1c")
-        self.agregar_mensaje(f"Tú: {mensaje}", "self")
+        txt_mensaje = self.caja_mensaje.get("1.0", "end-1c")
+        self.agregar_mensaje(f"Tú: {txt_mensaje}", "self")
+        
+        message = f"{self.host}#{self.name}#{self.port}: {txt_mensaje}" #Armar el mensaje
+        encrypted_message = self.encrypt_data(message)
+             
         for conn in self.connections:
             try:
-                conn.send(
-                    f"{self.host}#{self.name}#{self.port}: {mensaje}".encode("utf-8")
-                )
+                conn.send(encrypted_message)
             except socket.error as e:
                 if e.errno == errno.WSAENOTSOCK:  # Error de socket
                     conn.close()
@@ -207,21 +244,24 @@ class ChatApp:
         """Selecciona y envía una imagen a los peers."""
         file_path = filedialog.askopenfilename(
             title="Seleccionar Imagen",
-            filetypes=[("Imagenes", "*.png;*.jpg;*.jpeg;*.gif")],
+            filetypes=[("Imágenes", "*.png;*.jpg;*.jpeg;*.gif")],
         )
         if not file_path:
             return
 
-        self.agregar_mensaje(
-            f"Tú enviaste una imagen: ◙", "self"
-        )
+        self.agregar_mensaje(f"Tú enviaste una imagen: ◙", "self")
 
         for conn in self.connections:
             try:
+                # Obtener metadatos del archivo (sin encriptar)
                 filename = os.path.basename(file_path)
-                conn.send(
-                    f"IMG:{filename}:{os.path.getsize(file_path)}".encode("utf-8")
-                )
+                filesize = os.path.getsize(file_path)
+
+                # Enviar los metadatos del archivo (nombre y tamaño)
+                message = f"IMG:{filename}:{filesize}"
+                encrypted_message = self.encrypt_data(message)  # Cifrar metadatos
+                conn.sendall(encrypted_message)  # Enviar metadatos cifrados
+
                 with open(file_path, "rb") as img_file:
                     img_data = img_file.read(1024)
                     while img_data:
@@ -230,7 +270,8 @@ class ChatApp:
             except Exception as e:
                 messagebox.showerror("Error", f"Error al enviar la imagen: {e}")
             # Función para mostrar la imagen en una nueva ventana
-        self.mostrar_imagen(file_path,"enviada")
+            self.mostrar_imagen(file_path,"enviada")
+
         
     def mostrar_imagen(self, ruta, command):
         # Crear una nueva ventana
