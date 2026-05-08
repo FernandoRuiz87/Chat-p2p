@@ -34,6 +34,50 @@ El servidor actúa únicamente como **directorio de peers** (Discovery Server). 
 
 ---
 
+## 📸 Interfaz
+
+### Ventana de Login
+
+![Login](assets/images/login.png)
+
+### Ventana de Chat
+
+![Chat](assets/images/chat.png)
+
+### Envío de imágenes
+
+![Envío de imagen](assets/images/send_image.png)
+
+### Notificación de desconexión
+
+![Desconexión](assets/images/disconnection.png)
+
+### Colores de mensajes
+
+| Color | Significado |
+|---|---|
+| 🟢 Verde | Mensajes de otros usuarios |
+| 🔵 Azul | Tus propios mensajes |
+| 🟡 Amarillo | Notificación de nuevo usuario |
+| 🔴 Rojo | Notificación de usuario desconectado |
+
+### Consola del Servidor
+
+![Server](assets/images/server.png)
+
+---
+
+## 🔐 Seguridad
+
+La comunicación está protegida con **cifrado simétrico Fernet**, que garantiza:
+- **Confidencialidad** — Los mensajes no pueden leerse sin la clave.
+- **Integridad** — Cualquier modificación en tránsito es detectada (HMAC-SHA256).
+- **Autenticidad** — Los datos provienen del remitente legítimo.
+
+> La clave en `config/env.py` es una pre-shared key. Para producción, se recomienda implementar un esquema de intercambio de claves más robusto (e.g., Diffie-Hellman).
+
+---
+
 ## 📁 Estructura del Proyecto
 
 ```
@@ -61,7 +105,9 @@ Chat-p2p/
 
 ---
 
-## 🛠️ Requisitos
+## 🛠️ Instalación
+
+### Requisitos
 
 - Python **3.10+**
 - Las siguientes dependencias de terceros:
@@ -73,9 +119,7 @@ Chat-p2p/
 | `Pillow` | Visualización de imágenes en el chat |
 | `tkinter` | Framework base de la UI *(incluido en Python)* |
 
----
-
-## ⚙️ Instalación
+### Pasos
 
 ```bash
 # 1. Clona el repositorio
@@ -131,50 +175,3 @@ Al iniciar, el cliente:
 | `KEY` | *(Fernet key)* | Clave simétrica de cifrado compartida |
 
 > **⚠️ Importante:** Todos los clientes y el servidor deben usar la misma `KEY`. Para desplegar en red local o remota, cambia `HOST` a la IP de la máquina que ejecuta el servidor.
-
----
-
-## 🔐 Seguridad
-
-La comunicación está protegida con **cifrado simétrico Fernet**, que garantiza:
-- **Confidencialidad** — Los mensajes no pueden leerse sin la clave.
-- **Integridad** — Cualquier modificación en tránsito es detectada (HMAC-SHA256).
-- **Autenticidad** — Los datos provienen del remitente legítimo.
-
-> La clave en `config/env.py` es una pre-shared key. Para producción, se recomienda implementar un esquema de intercambio de claves más robusto (e.g., Diffie-Hellman).
-
----
-
-## 📸 Interfaz
-
-### Ventana de Login
-
-![Login](assets/images/login.png)
-
-### Ventana de Chat
-
-![Chat](assets/images/chat.png)
-
-### Envío de imágenes
-
-![Envío de imagen](assets/images/send_image.png)
-
-### Notificación de desconexión
-
-![Desconexión](assets/images/disconnection.png)
-
-### Colores de mensajes
-
-| Color | Significado |
-|---|---|
-| 🟢 Verde | Mensajes de otros usuarios |
-| 🔵 Azul | Tus propios mensajes |
-| 🟡 Amarillo | Notificación de nuevo usuario |
-| 🔴 Rojo | Notificación de usuario desconectado |
-
----
-
-## 🖥️ Consola del Servidor
-
-![Server](assets/images/server.png)
-
