@@ -8,12 +8,3 @@ __pycache__
 
 # Ignore all .jpg files
 *.jpg
-
-# Ignore all image files (including other types like .gif, .jpeg, etc.)
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.bmp
-*.tiff
-*.svg
