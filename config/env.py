@@ -1,5 +1,5 @@
 HOST = "localhost"
-PORT = 8000
+PORT = 5000
 LISTENER_LIMIT = 5
 KEY = b'SKPCkJpnf1UXGB66AerRMl2CIAwtFyz6bENXc9de7fQ='
  

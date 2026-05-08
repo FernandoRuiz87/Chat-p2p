@@ -1,11 +1,12 @@
-from cryptography.fernet import Fernet
 import threading
 import datetime
 import socket
 import errno
-import env
+import json
 from os import system
-from Colores import *
+from config.colors import *
+import crypto  # Módulo compartido de cifrado (crypto.py)
+from config import env
 
 system("cls")
 
@@ -23,13 +24,7 @@ now = datetime.datetime.now()
 # Formatear la fecha y hora en un formato legible
 hora_conexion = now.strftime("%Y-%m-%d %H:%M:%S")
 
-cipher_suite = Fernet(env.KEY)
-
-def encrypt_data(data):
-    return cipher_suite.encrypt(data.encode("utf-8")) #Encriptar
-
-def decrypt_data(encrypted_data):
-    return cipher_suite.decrypt(encrypted_data).decode("utf-8") #Desencriptar
+# Las funciones de cifrado viven en crypto.py para ser compartidas con el cliente
 
 def handle_client(conn, addr):
     """Maneja la conexión con un cliente (nodo)"""
@@ -37,27 +32,24 @@ def handle_client(conn, addr):
         peer_info = None  # Inicializa peer_info fuera del bucle
         while True:
             encrypted_data = conn.recv(1024)
-            if not encrypt_data:  # Si no hay datos, el cliente se ha desconectado
-                print(
-                    f"{RED}[DESCONEXION] {YELLOW}{ip}:{port}{RESET} ~~~ {RED}[HORA_DESCONEXION] {YELLOW}{hora_conexion}{RESET}"
-                )
+            if not encrypted_data:  # Si no hay datos, el cliente cerró la conexión
                 break
-            # Desencriptar datos
-            data = decrypt_data(encrypted_data)
-            
+
+            data = crypto.decrypt(encrypted_data)  # Descifrar con el módulo compartido
+
             if "[REGISTER]" in data:
                 _, ip, port, name = data.split(",")
                 peer_info = (ip, int(port), name)
 
-                # Verificar si el peer ya está registrado
+                # Registrar el peer si no existe ya en la lista
                 if peer_info not in peers:
                     peers.append(peer_info)
                     print(
                         f"{GREEN}[CONEXIÓN] {YELLOW}{ip}:{port}{RESET} ~~~ {GREEN}[HORA_CONEXIÓN] {YELLOW}{hora_conexion}{RESET}"
                     )
 
-                 # Enviar la lista actualizada de peers al nodo, cifrada
-                encrypted_peers = encrypt_data(str(peers))
+                # Enviar la lista de peers serializada en JSON (cifrada)
+                encrypted_peers = crypto.encrypt(json.dumps(peers))
                 conn.send(encrypted_peers)
                 
     except socket.error as e:
@@ -72,15 +64,20 @@ def handle_client(conn, addr):
                 f"{RED}[DESCONEXION] {YELLOW}{ip}:{port}{RESET} ~~~ {RED}[HORA_DESCONEXION] {YELLOW}{hora_conexion}{RESET}"
             )
             # print(f"{BLUE}Lista de peers actualizada: {peers}{RESET}")
-        conn.close()  # Asegúrate de cerrar la conexión al final
+        conn.close()
 
 
 def receive_connections():
-    """Acepta conexiones de nuevos nodos"""
-    while True:
-        conn, addr = server.accept()
-        thread = threading.Thread(target=handle_client, args=(conn, addr))
-        thread.start()
+    try:
+        while True:
+            conn, addr = server.accept()
+            thread = threading.Thread(target=handle_client, args=(conn, addr))
+            thread.daemon = True  # El hilo muere cuando el programa termina
+            thread.start()
+    except KeyboardInterrupt:
+        print(f"\n{RED}Servidor detenido por el usuario.{RESET}")
+    finally:
+        server.close()  # Siempre libera el puerto
 
 
 print(f"Servidor iniciado en {PURPLE}({env.HOST}:{env.PORT}){RESET}\n")

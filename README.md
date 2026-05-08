@@ -85,7 +85,7 @@ pip install customtkinter cryptography Pillow
 El servidor debe estar corriendo **antes** de que cualquier cliente intente conectarse.
 
 ```bash
-python Server.py
+python server.py
 ```
 
 El servidor escuchará en `localhost:8000` de forma predeterminada.
