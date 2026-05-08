@@ -7,17 +7,14 @@ Una aplicación de **chat en tiempo real con arquitectura peer-to-peer (P2P)**, 
 ## 🏗️ Arquitectura
 
 ```
-┌─────────────┐          ┌─────────────────────────────┐
-│             │  REGISTER│                             │
-│   Cliente A │◄────────►│   Servidor de Registro      │
-│  (chat.py)  │          │      (Server.py)            │
-│             │          │  – Mantiene lista de peers  │
-└──────┬──────┘          └─────────────────────────────┘
-       │  P2P directo
-       │ (TCP sockets)
+┌─────────────┐  REGISTER  ┌─────────────────────────────┐
+│             │◄──────────►│   Servidor de Registro      │
+│  Cliente A  │            │      (Server.py)            │
+│             │            │  – Mantiene lista de peers  │
+└──────┬──────┘            └─────────────────────────────┘
+       │  P2P directo (TCP sockets, cifrado E2E)
 ┌──────▼──────┐
-│   Cliente B │
-│  (chat.py)  │
+│  Cliente B  │
 └─────────────┘
 ```
 
@@ -41,27 +38,40 @@ El servidor actúa únicamente como **directorio de peers** (Discovery Server). 
 
 ```
 Chat-p2p/
-├── Server.py       # Servidor de registro (Discovery Server)
-├── chat.py         # Cliente P2P con GUI
-├── env.py          # Configuración: HOST, PORT y clave de cifrado
-├── Colores.py      # Constantes ANSI para colores en consola
+├── run.py              # Punto de entrada del cliente
+├── server.py           # Servidor de registro (Discovery Server)
+├── crypto.py           # Módulo de cifrado compartido (cliente + servidor)
+├── requirements.txt    # Dependencias del proyecto
+│
+├── chat/               # Paquete del cliente P2P
+│   ├── __init__.py
+│   ├── main.py         # Inicialización: conecta red y GUI
+│   ├── network.py      # Lógica de red P2P (ChatNetwork)
+│   └── gui.py          # Interfaz gráfica (ChatGUI)
+│
+├── config/             # Paquete de configuración
+│   ├── __init__.py
+│   ├── config.py       # Constantes: colores, fuentes, tamaños de ventana
+│   ├── env.py          # Variables de entorno: HOST, PORT, KEY
+│   └── colors.py       # Colores ANSI para la consola del servidor
+│
 └── images/
-    └── logo.png    # Ícono de la aplicación
+    └── logo.png        # Ícono de la aplicación
 ```
 
 ---
 
 ## 🛠️ Requisitos
 
-- Python **3.8+**
-- Las siguientes dependencias de Python:
+- Python **3.10+**
+- Las siguientes dependencias de terceros:
 
 | Librería | Uso |
 |---|---|
 | `customtkinter` | Widgets modernos para la GUI |
-| `cryptography` | Cifrado Fernet (AES) |
+| `cryptography` | Cifrado Fernet (AES-128-CBC + HMAC-SHA256) |
 | `Pillow` | Visualización de imágenes en el chat |
-| `tkinter` | Framework base de la interfaz gráfica (incluido en Python) |
+| `tkinter` | Framework base de la UI *(incluido en Python)* |
 
 ---
 
@@ -72,8 +82,13 @@ Chat-p2p/
 git clone https://github.com/FernandoRuiz87/Chat-p2p.git
 cd Chat-p2p
 
-# 2. Instala las dependencias
-pip install customtkinter cryptography Pillow
+# 2. (Recomendado) Crea un entorno virtual
+python -m venv .venv
+.venv\Scripts\activate      # Windows
+# source .venv/bin/activate # Linux / macOS
+
+# 3. Instala las dependencias
+pip install -r requirements.txt
 ```
 
 ---
@@ -88,14 +103,14 @@ El servidor debe estar corriendo **antes** de que cualquier cliente intente cone
 python server.py
 ```
 
-El servidor escuchará en `localhost:8000` de forma predeterminada.
+El servidor escuchará en `localhost:5000` de forma predeterminada y mostrará un log de conexiones/desconexiones en tiempo real.
 
 ### 2. Iniciar uno o más clientes
 
-Abre una terminal por cada usuario que quieras conectar:
+Abre una terminal por cada usuario que quieras conectar (siempre desde la raíz del proyecto):
 
 ```bash
-python chat.py
+python run.py
 ```
 
 Al iniciar, el cliente:
@@ -107,13 +122,12 @@ Al iniciar, el cliente:
 
 ---
 
-## ⚙️ Configuración (`env.py`)
+## ⚙️ Configuración (`config/env.py`)
 
 | Variable | Valor por defecto | Descripción |
 |---|---|---|
 | `HOST` | `localhost` | Dirección del servidor de registro |
 | `PORT` | `8000` | Puerto del servidor de registro |
-| `LISTENER_LIMIT` | `5` | Conexiones en cola máximas |
 | `KEY` | *(Fernet key)* | Clave simétrica de cifrado compartida |
 
 > **⚠️ Importante:** Todos los clientes y el servidor deben usar la misma `KEY`. Para desplegar en red local o remota, cambia `HOST` a la IP de la máquina que ejecuta el servidor.
@@ -127,7 +141,7 @@ La comunicación está protegida con **cifrado simétrico Fernet**, que garantiz
 - **Integridad** — Cualquier modificación en tránsito es detectada (HMAC-SHA256).
 - **Autenticidad** — Los datos provienen del remitente legítimo.
 
-> La clave en `env.py` es compartida (pre-shared key). Para producción, se recomienda implementar un esquema de intercambio de claves más robusto (e.g., Diffie-Hellman).
+> La clave en `config/env.py` es una pre-shared key. Para producción, se recomienda implementar un esquema de intercambio de claves más robusto (e.g., Diffie-Hellman).
 
 ---
 
