@@ -40,4 +40,4 @@ CHAT_W,     CHAT_H     = 1000, 700
 CHAT_MIN_W, CHAT_MIN_H = 800,  650
 
 # --- Rutas de recursos ---
-ICON_PATH = str(Path(__file__).parent.parent / "images" / "logo.png")
+ICON_PATH = str(Path(__file__).parent.parent / "assets/logo" / "logo.png")

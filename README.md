@@ -147,12 +147,21 @@ La comunicación está protegida con **cifrado simétrico Fernet**, que garantiz
 
 ## 📸 Interfaz
 
-La aplicación cuenta con dos ventanas:
+### Ventana de Login
 
-| Ventana | Descripción |
-|---|---|
-| **Login** | Pantalla de bienvenida para ingresar el nombre de usuario |
-| **Chat** | Sala de chat con panel lateral de usuarios conectados, área de mensajes y controles para enviar texto e imágenes |
+![Login](assets/images/login.png)
+
+### Ventana de Chat
+
+![Chat](assets/images/chat.png)
+
+### Envío de imágenes
+
+![Envío de imagen](assets/images/send_image.png)
+
+### Notificación de desconexión
+
+![Desconexión](assets/images/disconnection.png)
 
 ### Colores de mensajes
 
@@ -162,3 +171,10 @@ La aplicación cuenta con dos ventanas:
 | 🔵 Azul | Tus propios mensajes |
 | 🟡 Amarillo | Notificación de nuevo usuario |
 | 🔴 Rojo | Notificación de usuario desconectado |
+
+---
+
+## 🖥️ Consola del Servidor
+
+![Server](assets/images/server.png)
+
